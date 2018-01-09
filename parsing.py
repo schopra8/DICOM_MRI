@@ -134,7 +134,6 @@ class MRIDataLoader(object):
         :param map_filename: path to csv file matching contour
                              subdirectories with dicom subdirectories
         :param minibatch_size: minibatch size for data fetching
-        :return: dictionary with DICOM image data
         """
         self.contour_dir = contour_dir
         self.dicom_dir = dicom_dir
@@ -142,6 +141,8 @@ class MRIDataLoader(object):
         self.minibatch_size = minibatch_size
         self.contour_masks = None
         self.dicoms = None
+        self.contour_mask_files = None
+        self.dicom_files = None
         self.num_data_fetched = 0
         self.data_size = 0
         super().__init__()
@@ -149,8 +150,8 @@ class MRIDataLoader(object):
     def load(self):
         """ Load training data (contour masks, dicoms) pairs
         """
-        self.contour_masks, self.dicoms = self._match_contour_to_dicom()
-        # self._shuffle_data()
+        self.contour_masks, self.dicoms, self.contour_mask_files, self.dicom_files = self._match_contour_to_dicom()
+        self._shuffle_data()
 
     def fetch_minibatch(self):
         """ Fetch minibatch of contour mask, dicom image data.
@@ -166,10 +167,15 @@ class MRIDataLoader(object):
 
         contour_masks = None
         dicom_images = None
+        contour_mask_files = None
+        dicom_files = None
+
         if (self.num_data_fetched + self.minibatch_size) >= self.data_size:
             # Last minibatch, before starting the next epoch.
             contour_masks = self.contour_masks[self.num_data_fetched : ]
             dicom_images = self.dicoms[self.num_data_fetched : ]
+            contour_mask_files = self.contour_mask_files[self.num_data_fetched : ]
+            dicom_files = self.dicom_files[self.num_data_fetched : ]
 
             # Reset num_data_fetched and reshuffle data
             self.num_data_fetched = 0
@@ -177,14 +183,16 @@ class MRIDataLoader(object):
         else:
             contour_masks = self.contour_masks[self.num_data_fetched : self.num_data_fetched+self.minibatch_size]
             dicom_images = self.dicoms[self.num_data_fetched:self.num_data_fetched+self.minibatch_size]
+            contour_mask_files = self.contour_mask_files[self.num_data_fetched : self.num_data_fetched+self.minibatch_size]
+            dicom_files = self.dicom_files[self.num_data_fetched : self.num_data_fetched+self.minibatch_size]
             self.num_data_fetched += self.minibatch_size
 
-        return np.asarray(contour_masks), np.asarray(dicom_images)       
+        return np.asarray(contour_masks), np.asarray(dicom_images), contour_mask_files, dicom_files      
 
     def _parse_map_file(self):
         """ Parse map file, linking contour subdirectories with dicom subdirectories
 
-        :return: dictionary of contour_id -> dicom_id
+        :return: dictionary of contour_name -> dicom_name
         """
         dir_ids = []
         with open(self.map_filename) as map_file:
@@ -199,17 +207,20 @@ class MRIDataLoader(object):
         :return: list of parsed contour masks
         :return: list of parsed dicom image files
         """
+        selected_dicoms = []   
+        selected_dicom_files = []
         selected_contour_masks = []
-        selected_dicoms = []
-        dir_ids = self._parse_map_file()
-        for contour_id, dicom_id in dir_ids:
+        selected_contour_files = []
+
+        dir_pairs = self._parse_map_file()
+        for contour_name, dicom_name in dir_pairs:
             # parse i-contour files in desired directory
-            icontour_path = os.path.join(self.contour_dir, contour_id, 'i-contours')
+            icontour_path = os.path.join(self.contour_dir, contour_name, 'i-contours')
             icountour_parser = IContourParser(icontour_path)
             contours = icountour_parser.parse()
 
             # parse dicom files in desired directory
-            dicom_path = os.path.join(self.dicom_dir, dicom_id)
+            dicom_path = os.path.join(self.dicom_dir, dicom_name)
             dicom_parser = DicomParser(dicom_path)
             dicoms = dicom_parser.parse()
 
@@ -231,17 +242,18 @@ class MRIDataLoader(object):
             # Determine overlap between dicom images and the countour files
             shared_ids = set(extracted_dicom_ids.keys()).intersection(set(dicoms.keys()))
             selected_dicoms.extend([dicoms[x] for x in shared_ids])
+            selected_dicom_files.extend([os.path.join(dicom_path, x) for x in shared_ids])
 
             # Note: Height, Width for contour map is surmised from the dimensions of the dicom image.
-            # This may be incorrect.
             for id in shared_ids:
                 contour = contours[extracted_dicom_ids[id]]
                 img_sz = dicoms[id]['pixel_data'].shape
                 contour_mask = self._poly_to_mask(contour, img_sz[1], img_sz[0])
                 selected_contour_masks.append(contour_mask)
-        
+                selected_contour_files.append(os.path.join(icontour_path, extracted_dicom_ids[id]))
+
         self.data_size = len(selected_contour_masks)
-        return selected_contour_masks, selected_dicoms
+        return selected_contour_masks, selected_dicoms, selected_contour_files, selected_dicom_files
 
     def _poly_to_mask(self, polygon, width, height):
         """Convert polygon to mask
@@ -264,9 +276,9 @@ class MRIDataLoader(object):
             Note: This is an internal function and should only be called,
                   once it's been guaranteed that the data has been loaded.
         """
-        data = list(zip(self.contour_masks, self.dicoms))
+        data = list(zip(self.contour_masks, self.dicoms, self.contour_mask_files, self.dicom_files))
         random.shuffle(data)
-        self.contour_masks[:], self.dicoms[:] = zip(*data)
+        self.contour_masks[:], self.dicoms[:], self.contour_mask_files[:], self.dicom_files[:] = zip(*data)
 
 
 if __name__ == '__main__':
