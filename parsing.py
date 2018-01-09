@@ -279,14 +279,3 @@ class MRIDataLoader(object):
         data = list(zip(self.contour_masks, self.dicoms, self.contour_mask_files, self.dicom_files))
         random.shuffle(data)
         self.contour_masks[:], self.dicoms[:], self.contour_mask_files[:], self.dicom_files[:] = zip(*data)
-
-
-if __name__ == '__main__':
-    dataLoader = MRIDataLoader(
-        './final_data/contourfiles',
-        './final_data/dicoms',
-        './final_data/link.csv',
-        8
-    )
-    dataLoader.load()
-    contour_masks, dicoms = dataLoader.fetch_minibatch()
