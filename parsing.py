@@ -66,21 +66,6 @@ class IContourParser(DataParser):
 
         return coords_lst
 
-    def poly_to_mask(self, polygon, width, height):
-        """Convert polygon to mask
-
-        :param polygon: list of pairs of x, y coords [(x1, y1), (x2, y2), ...]
-        in units of pixels
-        :param width: scalar image width
-        :param height: scalar image height
-        :return: Boolean mask of shape (height, width)
-        """
-
-        # http://stackoverflow.com/a/3732128/1410871
-        img = Image.new(mode='L', size=(width, height), color=0)
-        ImageDraw.Draw(img).polygon(xy=polygon, outline=0, fill=1)
-        mask = np.array(img).astype(bool)
-        return mask
 
 class DicomParser(DataParser):
     def parse(self):
@@ -134,7 +119,7 @@ class MRIDataLoader(object):
 
         :param contour_dir: path to directory with parseable contour_dir
         :param dicom_dir: path to directory with parseable dicom_dir
-        :param map_filenam: path to csv file matching contour subdirectories with dicom subdirectories
+        :param map_filename: path to csv file matching contour subdirectories with dicom subdirectories
         :return: dictionary with DICOM image data
         """
         self.contour_dir = contour_dir
@@ -145,8 +130,8 @@ class MRIDataLoader(object):
     def load(self):
         """ Load training data (contours, dicoms) pairs
         """
-        contours, dicoms = self._match_contour_to_dicom()
-        print(contours)
+        contour_masks, dicoms = self._match_contour_to_dicom()
+        print(contour_masks)
         print(dicoms)
 
     def _parse_map_file(self):
@@ -167,7 +152,7 @@ class MRIDataLoader(object):
         :return: list of parsed contour masks
         :return: list of parsed dicom image files
         """
-        selected_contours = []
+        selected_contour_masks = []
         selected_dicoms = []
         dir_ids = self._parse_map_file()
         for contour_id, dicom_id in dir_ids:
@@ -181,18 +166,51 @@ class MRIDataLoader(object):
             dicom_parser = DicomParser(dicom_path)
             dicoms = dicom_parser.parse()
 
-            # Match i-contour files to dicom files
+            # Extract dicom id for each of the contour files
             def extract_dicom_id(filename):
+                """ Extract dicom id from the contour file name.
+                    Note: Here, we make the assumption that the file `IM-0001-0060-icontour-manual.txt`
+                          matches with the 60.dcm file, in the appropriate dicom subdirectory.
+                
+                    :return: string version of the dicom id for the given contour filename
+                """
                 end_ind = filename.find('-icontour')
                 num = filename[end_ind-4:end_ind]
                 return num.lstrip('0')
             extracted_dicom_ids = {
                 extract_dicom_id(contour_filename) : contour_filename for contour_filename in contours.keys()
             }
+
+            # Determine overlap between dicom images and the countour files
             shared_ids = set(extracted_dicom_ids.keys()).intersection(set(dicoms.keys()))
-            selected_contours.extend([contours[extracted_dicom_ids[x]] for x in shared_ids])
             selected_dicoms.extend([dicoms[x] for x in shared_ids])
-        return selected_contours, selected_dicoms
+
+            # Note: Height, Width for contour map is surmised from the dimensions of the dicom image.
+            # This may be incorrect.
+            print(dicoms.keys())
+            for id in shared_ids:
+                contour = contours[extracted_dicom_ids[id]]
+                img_sz = dicoms[id]['pixel_data'].shape
+                contour_mask = self.poly_to_mask(contour, img_sz[1], img_sz[0])
+                selected_contour_masks.extend(contour_mask)
+            
+        return selected_contour_masks, selected_dicoms
+
+    def poly_to_mask(self, polygon, width, height):
+        """Convert polygon to mask
+
+        :param polygon: list of pairs of x, y coords [(x1, y1), (x2, y2), ...]
+        in units of pixels
+        :param width: scalar image width
+        :param height: scalar image height
+        :return: Boolean mask of shape (height, width)
+        """
+
+        # http://stackoverflow.com/a/3732128/1410871
+        img = Image.new(mode='L', size=(width, height), color=0)
+        ImageDraw.Draw(img).polygon(xy=polygon, outline=0, fill=1)
+        mask = np.array(img).astype(bool)
+        return mask
 
 if __name__ == '__main__':
     dataLoader = MRIDataLoader(
