@@ -11,16 +11,30 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 class DataParser(ABC):
+    """ Data Parser Abstract Class
+    """
     def __init__(self, data_dir):
+        """ Initialize parser
+
+        :param data_dir: path to directory with parseable files
+        """
         self.dir = os.fsencode(data_dir)
         super().__init__()
 
     @abstractmethod
     def parse(self):
+        """ Parse files from the initialized directory
+
+        :return: map of filenames to parsed data files
+        """
         pass
 
 class IContourParser(DataParser):
     def parse(self):
+        """ Parse contour files from the initialized directory
+
+        :return: map of the filenames to parsed contour files
+        """
         fn_to_data = {}
         for file in os.listdir(self.dir):
             data_dir = os.fsdecode(self.dir)
@@ -70,6 +84,10 @@ class IContourParser(DataParser):
 
 class DicomParser(DataParser):
     def parse(self):
+        """ Parse dicom files from the initialized directory
+
+        :return: map of the filenames to parsed dicom files
+        """
         fn_to_data = {}
         for file in os.listdir(self.dir):
             data_dir = os.fsdecode(self.dir)
@@ -112,17 +130,30 @@ class DicomParser(DataParser):
 
 class MRIDataLoader(object):
     def __init__(self, contour_dir, dicom_dir, map_filename):
+        """ Initialize the MRI Data Loader
+
+        :param contour_dir: path to directory with parseable contour_dir
+        :param dicom_dir: path to directory with parseable dicom_dir
+        :param map_filenam: path to csv file matching contour subdirectories with dicom subdirectories
+        :return: dictionary with DICOM image data
+        """
         self.contour_dir = contour_dir
         self.dicom_dir = dicom_dir
         self.map_filename = map_filename
         super().__init__()
 
     def load(self):
+        """ Load training data (contours, dicoms) pairs
+        """
         contours, dicoms = self._match_contour_to_dicom()
         print(contours)
         print(dicoms)
 
     def _parse_map_file(self):
+        """ Parse map file, linking contour subdirectories with dicom subdirectories
+
+        :return: dictionary of contour_id -> dicom_id
+        """
         dir_ids = []
         with open(self.map_filename) as map_file:
             reader = csv.DictReader(map_file)
@@ -131,6 +162,11 @@ class MRIDataLoader(object):
         return dir_ids
 
     def _match_contour_to_dicom(self):
+        """ Parse contours and dicoms. Then pair appropriate contours with dicoms.
+
+        :return: list of parsed contour masks
+        :return: list of parsed dicom image files
+        """
         selected_contours = []
         selected_dicoms = []
         dir_ids = self._parse_map_file()
