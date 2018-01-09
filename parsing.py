@@ -10,6 +10,7 @@ from dicom.errors import InvalidDicomError
 
 import numpy as np
 from PIL import Image, ImageDraw
+from matplotlib.pyplot import imshow
 
 class DataParser(ABC):
     """ Data Parser Abstract Class
@@ -149,14 +150,15 @@ class MRIDataLoader(object):
         """ Load training data (contour masks, dicoms) pairs
         """
         self.contour_masks, self.dicoms = self._match_contour_to_dicom()
-        self._shuffle_data()
+        # self._shuffle_data()
 
     def fetch_minibatch(self):
         """ Fetch minibatch of contour mask, dicom image data.
             Upon each epoch, all training data is randomly shuffled.
             Throws error if the data hasn't already been loaded.
 
-        :return: list of contour masks
+        :return: numpy array of contour masks
+        :return: numpy arary of dicom images
         """
         if self.contour_masks is None or self.dicoms is None:
             raise Exception('Please run .load(), to load training data from disk \
@@ -166,18 +168,18 @@ class MRIDataLoader(object):
         dicom_images = None
         if (self.num_data_fetched + self.minibatch_size) >= self.data_size:
             # Last minibatch, before starting the next epoch.
-            contour_masks = self.contour_masks[self.num_data_fetched]
-            dicom_images = self.dicoms[self.num_data_fetched]
+            contour_masks = self.contour_masks[self.num_data_fetched : ]
+            dicom_images = self.dicoms[self.num_data_fetched : ]
 
             # Reset num_data_fetched and reshuffle data
             self.num_data_fetched = 0
             self._shuffle_data()
         else:
-            contour_masks = self.contour_masks[self.num_data_fetched:self.num_data_fetched+self.minibatch_size]
+            contour_masks = self.contour_masks[self.num_data_fetched : self.num_data_fetched+self.minibatch_size]
             dicom_images = self.dicoms[self.num_data_fetched:self.num_data_fetched+self.minibatch_size]
             self.num_data_fetched += self.minibatch_size
 
-        return contour_masks, dicom_images            
+        return np.asarray(contour_masks), np.asarray(dicom_images)       
 
     def _parse_map_file(self):
         """ Parse map file, linking contour subdirectories with dicom subdirectories
@@ -236,7 +238,7 @@ class MRIDataLoader(object):
                 contour = contours[extracted_dicom_ids[id]]
                 img_sz = dicoms[id]['pixel_data'].shape
                 contour_mask = self._poly_to_mask(contour, img_sz[1], img_sz[0])
-                selected_contour_masks.extend(contour_mask)
+                selected_contour_masks.append(contour_mask)
         
         self.data_size = len(selected_contour_masks)
         return selected_contour_masks, selected_dicoms
@@ -250,10 +252,10 @@ class MRIDataLoader(object):
         :param height: scalar image height
         :return: Boolean mask of shape (height, width)
         """
-
         # http://stackoverflow.com/a/3732128/1410871
         img = Image.new(mode='L', size=(width, height), color=0)
-        ImageDraw.Draw(img).polygon(xy=polygon, outline=0, fill=1)
+        draw = ImageDraw.Draw(img, mode='L')
+        draw.polygon(xy=polygon, outline="green", fill="red")
         mask = np.array(img).astype(bool)
         return mask
 
@@ -275,4 +277,4 @@ if __name__ == '__main__':
         8
     )
     dataLoader.load()
-    print(dataLoader.fetch_minibatch())
+    contour_masks, dicoms = dataLoader.fetch_minibatch()
